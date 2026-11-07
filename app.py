@@ -1,25 +1,35 @@
 import io
 import os
+import json
+import base64
 import zipfile
 from pathlib import Path
+from typing import List, Dict, Any, Optional
+
 import streamlit as st
+import pandas as pd
+from pypdf import PdfReader
 
 # Cấu hình giao diện Streamlit
 st.set_page_config(
-    page_title="AI Multi-Agent Team Hub",
+    page_title="AI Multi-Agent Workspace | Nền Tảng AI Đa Năng",
     page_icon="🤖",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
 from ai_team.config import Config
-from ai_team.affiliate.orchestrator import AffiliateOrchestrator
+from ai_team.llm import LLMClient
+from ai_team.custom_agents import CustomAgentManager
+
+# Affiliate Agents
 from ai_team.affiliate.agents.research_agent import AffiliateResearcherAgent
 from ai_team.affiliate.agents.video_script_agent import VideoScriptAgent
 from ai_team.affiliate.agents.social_copy_agent import SocialCopyAgent
 from ai_team.affiliate.agents.visual_agent import VisualDesignerAgent
 from ai_team.affiliate.agents.compliance_agent import ConversionComplianceAgent
 
+# Dev Agents
 from ai_team.agents.scenario_agent import ScenarioAgent
 from ai_team.agents.coder_agent import CoderAgent
 from ai_team.agents.tester_agent import TesterAgent
@@ -72,12 +82,31 @@ with st.sidebar:
             "groq/llama-3.3-70b-versatile",
         ],
         index=0,
-        help="Khuyến nghị gemini-2.5-flash: Tốc độ cao, ngữ cảnh lớn và miễn phí.",
+        help="Khuyến nghị gemini-2.5-flash: Tốc độ cao, đa năng, xử lý hình ảnh & văn bản lớn.",
     )
 
     st.markdown("---")
-    st.caption("🚀 AI Multi-Agent System | Local Workspace: `D:\\AI TEAM`")
+    st.caption("🚀 AI Multi-Agent OS | Workspace: `D:\\AI TEAM`")
 
+# Helper function calling LLM
+def ask_llm(prompt: str, system_prompt: Optional[str] = None, temperature: float = 0.3) -> str:
+    client = LLMClient(model=model_choice, temperature=temperature)
+    return client.generate([{"role": "user", "content": prompt}], system_prompt=system_prompt)
+
+# Helper function calling LLM with Image (Multimodal)
+def ask_llm_vision(prompt: str, image_bytes: bytes, mime_type: str = "image/jpeg") -> str:
+    client = LLMClient(model=model_choice, temperature=0.2)
+    b64_image = base64.b64encode(image_bytes).decode("utf-8")
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": prompt},
+                {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{b64_image}"}},
+            ],
+        }
+    ]
+    return client.generate(messages)
 
 # -------------------------------------------------------------
 # TIÊU ĐỀ TRANG CHÍNH
@@ -85,16 +114,21 @@ with st.sidebar:
 st.markdown(
     """
     <div style="text-align: center; margin-bottom: 25px;">
-        <h1 style="color: #4A90E2; margin-bottom: 0;">🤖 AI MULTI-AGENT WORKSPACE</h1>
-        <p style="font-size: 1.1rem; color: #888;">Nền Tảng Tự Động Hóa Đa Tác Tử: Lập Trình Phần Mềm & Affiliate Marketing Toàn Diện</p>
+        <h1 style="color: #4A90E2; margin-bottom: 0;">🤖 ALL-IN-ONE AI MULTI-AGENT PLATFORM</h1>
+        <p style="font-size: 1.15rem; color: #888;">Nền Tảng AI Đa Năng: Lập Trình, Affiliate Marketing, Phân Tích Dữ Liệu, Viết Lách, Custom Bots & Nghiên Cứu Sâu</p>
     </div>
     """,
     unsafe_allow_html=True,
 )
 
-tab_affiliate, tab_dev = st.tabs([
-    "🛍️ TEAM BOT AFFILIATE MARKETING",
-    "💻 TEAM AI LẬP TRÌNH PHẦN MỀM (DEV)",
+# 6 TABS CHÍNH
+tab_affiliate, tab_dev, tab_analyst, tab_content, tab_bots, tab_chat = st.tabs([
+    "🛍️ Team Affiliate",
+    "💻 Team Lập Trình",
+    "📊 Phân Tích Dữ Liệu & File",
+    "✍️ Xưởng Viết Lách & Dịch",
+    "🤖 Tự Tạo Bot Riêng",
+    "💬 Trợ Lý Nghiên Cứu Sâu",
 ])
 
 
@@ -117,6 +151,7 @@ with tab_affiliate:
                 "Bàn phím cơ không dây Bluetooth Aula F75 cho dân văn phòng",
             ],
             index=0,
+            key="affiliate_preset",
         )
 
     with col_input:
@@ -126,6 +161,7 @@ with tab_affiliate:
             value=default_val,
             placeholder="Ví dụ: Bình giữ nhiệt inox 304 có màn hình LED báo nhiệt độ cảm ứng, giữ nóng/lạnh 12 tiếng, giá 99k trên TikTok Shop...",
             height=100,
+            key="affiliate_input",
         )
 
     btn_run_affiliate = st.button("🚀 BẮT ĐẦU CHẠY TEAM BOT AFFILIATE", type="primary", use_container_width=True)
@@ -166,7 +202,6 @@ with tab_affiliate:
 
                 status.update(label="🎉 Hoàn tất toàn bộ chiến dịch Affiliate!", state="complete", expanded=False)
 
-            # Lưu vào session state để hiển thị
             st.session_state["affiliate_result"] = {
                 "product": product_info,
                 "research": research_res,
@@ -176,7 +211,6 @@ with tab_affiliate:
                 "compliance": compliance_res,
             }
 
-    # Hiển thị kết quả nếu có trong session_state
     if "affiliate_result" in st.session_state:
         res = st.session_state["affiliate_result"]
         st.success(f"📦 Chiến Dịch Cho Sản Phẩm: **{res['product']}**")
@@ -203,7 +237,7 @@ with tab_affiliate:
 
         with subtab_visual:
             st.markdown("### 🎨 Bộ Ý Tưởng Hình Ảnh Giới Thiệu & Prompts AI (Midjourney / Flux / DALL-E)")
-            st.info("💡 Bạn chỉ việc copy câu Prompt tiếng Anh bên dưới dán vào Midjourney hoặc Bing Image Creator là có ngay bộ ảnh chuyên nghiệp!")
+            st.info("💡 Copy câu Prompt tiếng Anh bên dưới dán vào Midjourney hoặc Bing Image Creator là có ngay bộ ảnh chuyên nghiệp!")
             st.markdown(res["visual"])
 
         with subtab_video:
@@ -242,6 +276,7 @@ with tab_dev:
                 "Bộ chuyển đổi tiền tệ tự động có cache tỷ giá và giao diện dòng lệnh",
             ],
             index=0,
+            key="dev_preset",
         )
 
     with col_dev_in:
@@ -251,6 +286,7 @@ with tab_dev:
             value=default_dev,
             placeholder="Ví dụ: Tạo ứng dụng quản lý chi tiêu cá nhân bằng Python CLI, cho phép thêm khoản thu/chi, tính tổng theo tháng và lưu file CSV...",
             height=100,
+            key="dev_input",
         )
 
     btn_run_dev = st.button("💻 BẮT ĐẦU LẬP TRÌNH & KIỂM THỬ", type="primary", use_container_width=True)
@@ -320,7 +356,6 @@ with tab_dev:
                 "failed_cnt": failed_cnt,
             }
 
-    # Hiển thị kết quả Dev Team
     if "dev_result" in st.session_state:
         dres = st.session_state["dev_result"]
         if dres["is_passed"]:
@@ -340,7 +375,6 @@ with tab_dev:
                 with st.expander(f"📄 {fname}", expanded=True):
                     st.code(fcontent, language="python")
 
-            # Nút tải file ZIP
             zip_buffer = io.BytesIO()
             with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
                 for fname, fcontent in dres["code_files"].items():
@@ -361,3 +395,377 @@ with tab_dev:
         with dev_tab_test:
             st.markdown("### 🧪 Chi Tiết Kết Quả Chạy Pytest")
             st.code(dres["test_output"], language="bash")
+
+
+# =============================================================
+# TAB 3: PHÂN TÍCH FILE & DỮ LIỆU (DATA & DOC ANALYST)
+# =============================================================
+with tab_analyst:
+    st.subheader("📊 Trợ Lý Phân Tích Tài Liệu & Dữ Liệu Thông Minh")
+    st.info("💡 Hỗ trợ: **Excel (.xlsx), CSV, PDF, TXT, JSON, và Hình ảnh (.png, .jpg)** để tóm tắt văn bản, phân tích số liệu kinh doanh hoặc thị giác máy tính!")
+
+    uploaded_file = st.file_uploader(
+        "📂 Kéo thả hoặc chọn file để phân tích:",
+        type=["pdf", "xlsx", "xls", "csv", "txt", "json", "png", "jpg", "jpeg"],
+        key="analyst_file_uploader",
+    )
+
+    if uploaded_file is not None:
+        file_name = uploaded_file.name
+        file_ext = file_name.split(".")[-1].lower()
+
+        # 1. XỬ LÝ FILE CSV / EXCEL
+        if file_ext in ["csv", "xlsx", "xls"]:
+            try:
+                if file_ext == "csv":
+                    df = pd.read_csv(uploaded_file)
+                else:
+                    df = pd.read_excel(uploaded_file)
+
+                st.success(f"📊 Đã tải dữ liệu thành công: **{file_name}** ({df.shape[0]} dòng, {df.shape[1]} cột)")
+
+                col_view, col_stat = st.columns([2, 1])
+                with col_view:
+                    st.markdown("**Bảng Dữ Liệu Xem Trước (Top 50 dòng):**")
+                    st.dataframe(df.head(50), use_container_width=True)
+
+                with col_stat:
+                    st.markdown("**Thống Kê Mô Tả Nhanh:**")
+                    st.dataframe(df.describe(), use_container_width=True)
+
+                # Vẽ biểu đồ tương tác nhanh
+                numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
+                if numeric_cols:
+                    st.markdown("#### 📈 Vẽ Biểu Đồ Nhanh")
+                    c_chart1, c_chart2, c_chart3 = st.columns(3)
+                    with c_chart1:
+                        chart_type = st.selectbox("Loại biểu đồ", ["Cột (Bar)", "Đường (Line)", "Vùng (Area)"])
+                    with c_chart2:
+                        x_col = st.selectbox("Trục X (Nhãn)", df.columns.tolist())
+                    with c_chart3:
+                        y_col = st.selectbox("Trục Y (Số liệu)", numeric_cols)
+
+                    chart_data = df[[x_col, y_col]].set_index(x_col)
+                    if chart_type == "Cột (Bar)":
+                        st.bar_chart(chart_data)
+                    elif chart_type == "Đường (Line)":
+                        st.line_chart(chart_data)
+                    else:
+                        st.area_chart(chart_data)
+
+                # Hỏi đáp dữ liệu với AI
+                st.markdown("#### 🤖 Hỏi AI Về Bảng Dữ Liệu Này")
+                data_query = st.text_input(
+                    "Nhập câu hỏi của bạn:",
+                    placeholder="Ví dụ: Phân tích 3 xu hướng quan trọng nhất, các điểm bất thường và đề xuất giải pháp tối ưu doanh thu...",
+                    key="csv_query",
+                )
+                if st.button("🔍 Phân Tích Bằng AI", key="btn_csv_ai"):
+                    with st.spinner("AI đang tính toán và phân tích bảng số liệu..."):
+                        data_summary = f"Tên file: {file_name}\nSố dòng: {df.shape[0]}, Số cột: {df.shape[1]}\nCác cột: {list(df.columns)}\nTop 10 dòng:\n{df.head(10).to_string()}\nThống kê mô tả:\n{df.describe().to_string()}"
+                        system_prompt = "Bạn là một Chuyên gia Phân Tích Dữ Liệu Kinh Doanh (Senior Data & BI Analyst). Hãy trả lời câu hỏi dựa trên dữ liệu được cung cấp, nêu rõ các con số, xu hướng và đề xuất thực thi sắc bén."
+                        analysis = ask_llm(f"Dữ liệu bảng:\n{data_summary}\n\nCâu hỏi: {data_query}", system_prompt=system_prompt)
+                        st.markdown(analysis)
+
+            except Exception as e:
+                st.error(f"Lỗi khi đọc file bảng tính: {str(e)}")
+
+        # 2. XỬ LÝ FILE PDF / VĂN BẢN
+        elif file_ext in ["pdf", "txt", "json"]:
+            try:
+                extracted_text = ""
+                if file_ext == "pdf":
+                    pdf_reader = PdfReader(uploaded_file)
+                    for page in pdf_reader.pages:
+                        extracted_text += page.extract_text() or ""
+                else:
+                    extracted_text = uploaded_file.read().decode("utf-8", errors="ignore")
+
+                word_count = len(extracted_text.split())
+                st.success(f"📄 Đã đọc văn bản: **{file_name}** ({word_count:,} từ)")
+
+                with st.expander("👁️ Xem trích đoạn văn bản (1,000 ký tự đầu)", expanded=False):
+                    st.text(extracted_text[:1000] + ("..." if len(extracted_text) > 1000 else ""))
+
+                col_b1, col_b2 = st.columns(2)
+                with col_b1:
+                    btn_sum = st.button("📝 Tóm Tắt Ý Chính & Điểm Mấu Chốt", use_container_width=True)
+                with col_b2:
+                    btn_qa = st.button("🔍 Đánh Giá Rủi Ro & Cơ Hội", use_container_width=True)
+
+                if btn_sum:
+                    with st.spinner("AI đang đọc hiểu và tóm tắt văn bản..."):
+                        prompt = f"VĂN BẢN TÀI LIỆU:\n\"\"\"{extracted_text[:30000]}\"\"\"\n\nHãy tóm tắt văn bản trên thành bản Executive Summary chuyên nghiệp gồm: 1. Mục tiêu cốt lõi; 2. Các ý chính quan trọng nhất; 3. Hành động đề xuất."
+                        st.markdown(ask_llm(prompt))
+
+                if btn_qa:
+                    with st.spinner("AI đang phân tích rủi ro và cơ hội..."):
+                        prompt = f"VĂN BẢN TÀI LIỆU:\n\"\"\"{extracted_text[:30000]}\"\"\"\n\nHãy phân tích sâu: 1. Các rủi ro tiềm ẩn hoặc điểm bất lợi; 2. Các cơ hội và lợi thế cạnh tranh; 3. Khuyến nghị chiến lược."
+                        st.markdown(ask_llm(prompt))
+
+                doc_user_q = st.text_input("❓ Đặt câu hỏi cụ thể về tài liệu này:", key="doc_user_q")
+                if st.button("Hỏi AI Về Tài Liệu", key="btn_doc_q"):
+                    if doc_user_q.strip():
+                        with st.spinner("AI đang tra cứu câu trả lời trong tài liệu..."):
+                            prompt = f"TÀI LIỆU NGUỒN:\n\"\"\"{extracted_text[:30000]}\"\"\"\n\nCÂU HỎI:\n{doc_user_q}\n\nHãy trả lời chính xác dựa trên tài liệu trên, trích dẫn nội dung minh chứng nếu có."
+                            st.markdown(ask_llm(prompt))
+
+            except Exception as e:
+                st.error(f"Lỗi khi đọc tài liệu văn bản: {str(e)}")
+
+        # 3. XỬ LÝ FILE HÌNH ẢNH (VISION AI)
+        elif file_ext in ["png", "jpg", "jpeg"]:
+            try:
+                img_bytes = uploaded_file.read()
+                col_img, col_act = st.columns([1, 1])
+                with col_img:
+                    st.image(img_bytes, caption=f"Ảnh: {file_name}", use_container_width=True)
+
+                with col_act:
+                    st.markdown("#### 👁️ Hỏi AI Về Hình Ảnh Này")
+                    vision_preset = st.selectbox(
+                        "Chọn tác vụ nhanh:",
+                        [
+                            "Tự nhập câu hỏi...",
+                            "Đọc và trích xuất toàn bộ chữ trong ảnh (OCR)",
+                            "Phân tích hóa đơn, phiếu thu, bảng số liệu trong ảnh",
+                            "Mô tả chi tiết nội dung, màu sắc và góc chụp nghệ thuật của ảnh",
+                        ],
+                    )
+
+                    default_vq = "" if vision_preset == "Tự nhập câu hỏi..." else vision_preset
+                    vision_query = st.text_area("Câu hỏi / Yêu cầu của bạn:", value=default_vq, height=80)
+                    btn_vision = st.button("🔍 Phân Tích Ảnh Bằng Vision AI", type="primary")
+
+                if btn_vision:
+                    if not vision_query.strip():
+                        st.error("Vui lòng nhập câu hỏi về hình ảnh!")
+                    else:
+                        with st.spinner("AI Vision đang quan sát và phân tích hình ảnh..."):
+                            mime = "image/png" if file_ext == "png" else "image/jpeg"
+                            v_ans = ask_llm_vision(vision_query, img_bytes, mime_type=mime)
+                            st.markdown("### 📋 Kết Quả Phân Tích Hình Ảnh:")
+                            st.markdown(v_ans)
+
+            except Exception as e:
+                st.error(f"Lỗi khi xử lý hình ảnh: {str(e)}")
+
+
+# =============================================================
+# TAB 4: XƯỞNG VIẾT LÁCH & DỊCH THUẬT (CONTENT STUDIO)
+# =============================================================
+with tab_content:
+    st.subheader("✍️ Xưởng Sáng Tạo Nội Dung & Dịch Thuật Đa Năng")
+    st.info("💡 Soạn thảo nhanh **Email công việc, Dàn ý Slide thuyết trình, Bài PR báo chí, SEO Blog và Dịch thuật ngữ cảnh sâu**.")
+
+    content_mode = st.radio(
+        "Chọn loại nội dung muốn tạo:",
+        ["📧 Email Công Việc", "📑 Dàn Ý Slide Thuyết Trình", "📰 Bài Báo & SEO Blog", "🌐 Dịch Thuật Chuyên Sâu"],
+        horizontal=True,
+    )
+
+    # 1. EMAIL
+    if content_mode == "📧 Email Công Việc":
+        col_e1, col_e2 = st.columns(2)
+        with col_e1:
+            email_purpose = st.selectbox(
+                "Mục đích Email:",
+                ["Thương lượng giá / Đối tác", "Ứng tuyển / Thư xin việc (Cover Letter)", "Từ chối lịch sự đối tác/lời mời", "Đòi công nợ / Nhắc thanh toán khéo léo", "Báo cáo tiến độ cho Sếp", "Thư cảm ơn sau cuộc họp"],
+            )
+            email_tone = st.selectbox("Giọng văn:", ["Chuyên nghiệp & Lịch sự", "Trang trọng & Cứng rắn", "Thân thiện & Cởi mở", "Ngắn gọn súc tích"])
+        with col_e2:
+            email_points = st.text_area(
+                "Các ý chính cần có trong email:",
+                placeholder="Ví dụ: Đã nhận được báo giá ngày 5/11, muốn xin chiết khấu 15% vì đơn hàng số lượng lớn, hẹn phản hồi trước thứ 6...",
+                height=120,
+            )
+
+        if st.button("✉️ Soạn Email Tự Động", type="primary"):
+            if not email_points.strip():
+                st.error("Vui lòng nhập ý chính của email!")
+            else:
+                with st.spinner("AI đang soạn thảo 2 phiên bản email..."):
+                    prompt = f"Hãy viết email công việc chuyên nghiệp bằng Tiếng Việt:\n- Mục đích: {email_purpose}\n- Giọng văn: {email_tone}\n- Các ý chính: {email_points}\n\nHãy xuất ra 2 phiên bản: Phiên bản 1 (Ngắn gọn súc tích) và Phiên bản 2 (Đầy đủ, chi tiết, trang trọng)."
+                    st.markdown(ask_llm(prompt, temperature=0.4))
+
+    # 2. SLIDE THUYẾT TRÌNH
+    elif content_mode == "📑 Dàn Ý Slide Thuyết Trình":
+        col_s1, col_s2 = st.columns(2)
+        with col_s1:
+            slide_topic = st.text_input("Chủ đề bài thuyết trình:", placeholder="Ví dụ: Chiến lược phát triển sản phẩm công nghệ AI năm 2026")
+            slide_count = st.slider("Số lượng Slide:", min_value=5, max_value=20, value=8)
+        with col_s2:
+            slide_audience = st.selectbox("Đối tượng người nghe:", ["Nhà đầu tư / Ban Giám Đốc", "Khách hàng doanh nghiệp (B2B)", "Nhân viên nội bộ công ty", "Sinh viên / Đại chúng"])
+            slide_style = st.selectbox("Phong cách trình bày:", ["Mô hình khởi nghiệp (Pitch Deck)", "Báo cáo kinh doanh (Executive)", "Truyền cảm hứng & Đào tạo"])
+
+        if st.button("📑 Tạo Dàn Ý Slide Thuyết Trình", type="primary"):
+            if not slide_topic.strip():
+                st.error("Vui lòng nhập chủ đề slide!")
+            else:
+                with st.spinner("AI đang thiết kế cấu trúc slide từng trang..."):
+                    prompt = f"Hãy thiết kế dàn ý chi tiết bài thuyết trình PowerPoint ({slide_count} slides) về chủ đề: \"{slide_topic}\".\n- Đối tượng nghe: {slide_audience}\n- Phong cách: {slide_style}\n\nMỗi slide cần có: 1. Tiêu đề slide; 2. Các gạch đầu dòng nội dung chính; 3. Gợi ý hình ảnh/icon minh họa; 4. Lời thoại gợi ý của người thuyết trình (Speaker Notes)."
+                    st.markdown(ask_llm(prompt, temperature=0.5))
+
+    # 3. BÀI BÁO & SEO BLOG
+    elif content_mode == "📰 Bài Báo & SEO Blog":
+        col_a1, col_a2 = st.columns(2)
+        with col_a1:
+            article_topic = st.text_input("Tiêu đề / Chủ đề bài viết:", placeholder="Ví dụ: Xu hướng Trí tuệ Nhân tạo đa tác tử và cơ hội nghề nghiệp 2026")
+            target_keywords = st.text_input("Từ khóa SEO mục tiêu:", placeholder="Ví dụ: AI Multi-Agent, tự động hóa, xu hướng công nghệ")
+        with col_a2:
+            article_type = st.selectbox("Thể loại:", ["Bài viết Blog chuẩn SEO", "Thông cáo báo chí (PR Article)", "Bài phân tích chuyên sâu (Case Study)"])
+            article_length = st.selectbox("Độ dài mong muốn:", ["Khoảng 800 - 1,200 từ", "Khoảng 1,500 - 2,500 từ chuyên sâu"])
+
+        if st.button("📰 Viết Bài Chuẩn SEO", type="primary"):
+            if not article_topic.strip():
+                st.error("Vui lòng nhập chủ đề bài viết!")
+            else:
+                with st.spinner("AI đang biên tập bài viết chuyên nghiệp..."):
+                    prompt = f"Hãy viết một {article_type} hoàn chỉnh về chủ đề: \"{article_topic}\".\n- Từ khóa SEO: {target_keywords}\n- Độ dài: {article_length}\n\nYêu cầu: Có tiêu đề H1 giật tít thu hút, mở đầu cuốn hút, các đề mục H2, H3 logic, chèn từ khóa tự nhiên, có số liệu/dẫn chứng minh họa và phần kết luận kêu gọi hành động."
+                    st.markdown(ask_llm(prompt, temperature=0.6))
+
+    # 4. DỊCH THUẬT
+    else:
+        col_t1, col_t2 = st.columns(2)
+        with col_t1:
+            src_lang = st.selectbox("Ngôn ngữ nguồn:", ["Tiếng Việt", "Tiếng Anh", "Tiếng Trung", "Tiếng Nhật", "Tiếng Hàn", "Tiếng Pháp"])
+        with col_t2:
+            dst_lang = st.selectbox("Ngôn ngữ đích:", ["Tiếng Anh", "Tiếng Việt", "Tiếng Trung", "Tiếng Nhật", "Tiếng Hàn", "Tiếng Pháp"], index=0)
+
+        trans_style = st.selectbox("Văn phong dịch:", ["Tự nhiên chuẩn bản xứ (Native Casual)", "Trang trọng trong kinh doanh (Business Professional)", "Kỹ thuật chuyên ngành chính xác (Technical)", "Văn học nghệ thuật (Literary)"])
+        trans_text = st.text_area("Nhập văn bản cần dịch:", height=150)
+
+        if st.button("🌐 Dịch Thuật Chuyên Sâu", type="primary"):
+            if not trans_text.strip():
+                st.error("Vui lòng nhập văn bản cần dịch!")
+            else:
+                with st.spinner("AI đang dịch thuật và phân tích ngữ cảnh..."):
+                    prompt = f"Hãy dịch văn bản sau từ {src_lang} sang {dst_lang} theo văn phong \"{trans_style}\".\n\nVĂN BẢN GỐC:\n\"\"\"{trans_text}\"\"\"\n\nYêu cầu xuất ra:\n1. BẢN DỊCH CHUẨN XỊN (mượt mà, không dịch thô gượng gạo).\n2. GIẢI THÍCH NGỮ CẢNH & TỪ VỰNG HAY (nêu các collocations, thành ngữ đắt giá được sử dụng)."
+                    st.markdown(ask_llm(prompt, temperature=0.2))
+
+
+# =============================================================
+# TAB 5: TỰ TẠO BOT RIÊNG (CUSTOM AGENT BUILDER)
+# =============================================================
+with tab_bots:
+    st.subheader("🤖 Xưởng Tạo Bot AI Riêng Biệt (Custom Agent Builder)")
+    st.info("💡 Bạn có thể **chọn trò chuyện với 6 Bot chuyên gia có sẵn** hoặc **tự tạo ra bất kỳ con Bot nào** chỉ trong 10 giây để giải quyết công việc đặc thù!")
+
+    agents_list = CustomAgentManager.load_agents()
+
+    col_bot_select, col_bot_create = st.columns([2, 1])
+
+    # FORM TẠO BOT MỚI
+    with col_bot_create:
+        with st.expander("➕ TỰ TẠO BOT MỚI THEO Ý BẠN", expanded=False):
+            new_bot_name = st.text_input("Tên Bot:", placeholder="Ví dụ: Thầy Giáo Dạy Tiếng Trung")
+            new_bot_icon = st.text_input("Icon Emoji:", value="🤖", max_chars=2)
+            new_bot_role = st.text_input("Vai trò ngắn gọn:", placeholder="Ví dụ: Giáo viên dạy khẩu ngữ HSK 5")
+            new_bot_prompt = st.text_area(
+                "Chỉ dẫn tính cách & nhiệm vụ (System Prompt):",
+                placeholder="Ví dụ: Bạn là thầy giáo tiếng Trung nhiệt tình. Hãy sửa phát âm pinyin, giải thích chữ Hán và đàm thoại cùng học viên...",
+                height=120,
+            )
+            new_bot_temp = st.slider("Độ sáng tạo:", 0.0, 1.0, 0.5, 0.1)
+
+            if st.button("💾 Lưu Bot Mới Vào Hệ Thống", type="primary", use_container_width=True):
+                if not new_bot_name.strip() or not new_bot_prompt.strip():
+                    st.error("Vui lòng nhập tên và chỉ dẫn hệ thống của Bot!")
+                else:
+                    CustomAgentManager.add_agent(
+                        name=new_bot_name,
+                        icon=new_bot_icon,
+                        role=new_bot_role,
+                        system_prompt=new_bot_prompt,
+                        temperature=new_bot_temp,
+                    )
+                    st.success(f"🎉 Đã tạo thành công Bot: {new_bot_icon} {new_bot_name}!")
+                    st.rerun()
+
+    # CHỌN VÀ CHAT VỚI BOT
+    with col_bot_select:
+        bot_names = [f"{b.get('icon', '🤖')} {b['name']} — {b.get('role', '')}" for b in agents_list]
+        selected_idx = st.selectbox("Chọn Bot bạn muốn trò chuyện:", range(len(bot_names)), format_func=lambda i: bot_names[i])
+        current_bot = agents_list[selected_idx]
+
+        st.markdown(f"### {current_bot.get('icon', '🤖')} {current_bot['name']}")
+        st.caption(f"**Vai trò:** {current_bot.get('role', '')}")
+
+        with st.expander("📜 Xem System Prompt của Bot", expanded=False):
+            st.text(current_bot["system_prompt"])
+
+        # Chat interface với bot
+        bot_id = current_bot["id"]
+        chat_key = f"bot_chat_{bot_id}"
+        if chat_key not in st.session_state:
+            st.session_state[chat_key] = []
+
+        # Hiển thị lịch sử chat của bot này
+        for msg in st.session_state[chat_key]:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
+
+        user_msg = st.chat_input(f"Hỏi {current_bot['name']}...", key=f"chat_input_{bot_id}")
+        if user_msg:
+            st.session_state[chat_key].append({"role": "user", "content": user_msg})
+            with st.chat_message("user"):
+                st.markdown(user_msg)
+
+            with st.chat_message("assistant"):
+                with st.spinner(f"{current_bot['name']} đang suy nghĩ..."):
+                    # Construct message history
+                    history = [{"role": m["role"], "content": m["content"]} for m in st.session_state[chat_key]]
+                    client = LLMClient(model=model_choice, temperature=current_bot.get("temperature", 0.4))
+                    bot_ans = client.generate(history, system_prompt=current_bot["system_prompt"])
+                    st.markdown(bot_ans)
+                    st.session_state[chat_key].append({"role": "assistant", "content": bot_ans})
+
+        if st.session_state[chat_key]:
+            if st.button("🗑️ Xóa Lịch Sử Đoạn Chat Này", key=f"clear_bot_{bot_id}"):
+                st.session_state[chat_key] = []
+                st.rerun()
+
+
+# =============================================================
+# TAB 6: TRỢ LÝ TRÒ CHUYỆN & NGHIÊN CỨU SÂU (DEEP RESEARCH CHAT)
+# =============================================================
+with tab_chat:
+    st.subheader("💬 Trợ Lý AI Trò Chuyện & Nghiên Cứu Sâu (Deep Research)")
+    st.info("💡 Trò chuyện tự do hoặc bật chế độ **Deep Research** để AI phân tích đa chiều, bẻ gãy vấn đề phức tạp thành từng bước logic.")
+
+    col_c1, col_c2 = st.columns([3, 1])
+    with col_c2:
+        deep_mode = st.toggle("🧠 Bật Chế Độ Deep Research", value=True, help="Kích hoạt tư duy phản biện đa chiều và phân tích từng bước chi tiết.")
+        if st.button("🗑️ Xóa Cuộc Trò Chuyện", use_container_width=True):
+            st.session_state["main_chat_history"] = []
+            st.rerun()
+
+    if "main_chat_history" not in st.session_state:
+        st.session_state["main_chat_history"] = []
+
+    # Hiển thị lịch sử chat
+    for m in st.session_state["main_chat_history"]:
+        with st.chat_message(m["role"]):
+            st.markdown(m["content"])
+
+    main_user_input = st.chat_input("Nhập câu hỏi hoặc chủ đề bạn muốn nghiên cứu sâu...", key="main_chat_input")
+    if main_user_input:
+        st.session_state["main_chat_history"].append({"role": "user", "content": main_user_input})
+        with st.chat_message("user"):
+            st.markdown(main_user_input)
+
+        with st.chat_message("assistant"):
+            with st.spinner("AI đang tư duy và nghiên cứu sâu..."):
+                sys_prompt = "Bạn là một Nhà Khoa Học & Cố Vấn Nghiên Cứu Toàn Năng (Chief Research Scientist). Trả lời thông tuệ, lập luận chặt chẽ, khách quan và đưa ra giải pháp toàn diện."
+                if deep_mode:
+                    sys_prompt += "\n\nHÃY ÁP DỤNG QUY TRÌNH DEEP RESEARCH:\n1. Phân tích bản chất câu hỏi và các giả định ngầm.\n2. Lập luận đa góc nhìn (Ưu điểm, Nhược điểm, Bất ngờ, Trường hợp biên).\n3. Đưa ra lộ trình hành động hoặc câu trả lời có tính ứng dụng cao nhất."
+
+                history = [{"role": msg["role"], "content": msg["content"]} for msg in st.session_state["main_chat_history"]]
+                client = LLMClient(model=model_choice, temperature=0.3)
+                ans = client.generate(history, system_prompt=sys_prompt)
+                st.markdown(ans)
+                st.session_state["main_chat_history"].append({"role": "assistant", "content": ans})
+
+        # Nút xuất lịch sử chat
+        chat_export = "\n\n---\n\n".join([f"**{m['role'].upper()}:**\n{m['content']}" for m in st.session_state["main_chat_history"]])
+        st.download_button("📥 Xuất Cuộc Trò Chuyện (.md)", data=chat_export, file_name="deep_research_chat.md", mime="text/markdown")

@@ -28,7 +28,7 @@ class LLMClient:
         if Config.ANTHROPIC_API_KEY and not os.getenv("ANTHROPIC_API_KEY"):
             os.environ["ANTHROPIC_API_KEY"] = Config.ANTHROPIC_API_KEY
 
-    def generate(self, messages: List[Dict[str, str]], system_prompt: Optional[str] = None) -> str:
+    def generate(self, messages: List[Dict[str, Any]], system_prompt: Optional[str] = None) -> str:
         """Call the LLM with messages, automatic retry, and fallback on 503/high-demand."""
         full_messages = []
         if system_prompt:
