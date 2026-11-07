@@ -1,0 +1,27 @@
+# Environment Variables & Secrets (Bảo mật tuyệt đối, không đẩy lên Git)
+.env
+*.env
+.env.local
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Local workspace output
+workspace/
+*.log
+
+# Editor & OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

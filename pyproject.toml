@@ -1,0 +1,25 @@
+[project]
+name = "ai-team"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Kan", email = "contact.kantran@gmail.com" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "litellm>=1.108.0",
+    "pydantic>=2.14.2",
+    "pytest>=9.2.0",
+    "python-dotenv>=1.2.4",
+    "rich>=15.0.0",
+    "streamlit>=1.67.0",
+]
+
+[project.scripts]
+ai-team = "ai_team:main"
+affiliate-team = "ai_team.affiliate.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.13.0,<0.14.0"]
+build-backend = "uv_build"
